@@ -4,6 +4,8 @@ Statistical analysis of 16,719 video games examining the
 relationship between critic scores, user scores, and global sales.
 Written in R and Quarto.
 
+**[View the rendered report](https://https://milkovict.github.io/video-game-sales-analysis//)** | [PDF](Seminar.pdf)
+
 ## Questions
 
 - Do critics and players agree on the same games?
