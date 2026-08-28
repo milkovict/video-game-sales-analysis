@@ -1,0 +1,559 @@
+---
+title: "Analiza ocjena i prodaje videoigara"
+subtitle: "Seminar iz kolegija Statistički praktikum"
+author: "Tibor Milković"
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Sadržaj"
+    code-fold: true
+    code-tools: true
+    embed-resources: true
+    theme: cosmo
+    fig-width: 7
+    fig-height: 4.5
+  pdf:
+    include-before-body:
+      text: \thispagestyle{empty} \newpage
+    linkcolor: black
+    toc: true
+    toc-depth: 3
+    toc-title: "Sadržaj"
+    fig-pos: "H"
+    fig-width: 6.5
+    fig-height: 4
+editor: visual
+execute: 
+  echo: true
+  warning: false
+  message: false
+crossref:
+  fig-title: Slika 
+  tbl-title: Tablica
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+#0. ucitati biblioteku (za na_if)
+
+library(dplyr)
+
+#1. ucitati podatke 
+podaci <- read.csv("sales.csv")
+
+
+#2. stabiliziranje skale User_Score (ide od 1-10, Critic_Score ide od 1-100)
+
+podaci$User_Score = as.numeric(na_if(podaci$User_Score, "tbd"))
+
+podaci$User_Score100 <- podaci$User_Score*10
+
+#3 
+class(podaci$Genre)
+podaci$Genre <- factor(podaci$Genre)
+
+#4 
+
+podaci$Log_Sales <- log10(podaci$Global_Sales)
+podaci$Hit <- podaci$Global_Sales > 1 #vise od 1 mil sales
+
+#5
+
+podaci$Genre[podaci$Genre == ""] <- NA
+podaci$Genre <- factor(podaci$Genre)
+
+#6. tablica za analize ocjena
+
+podaci_oc <- podaci[!is.na(podaci$Critic_Score) & !is.na(podaci$User_Score), ]
+
+#7. fancy boje za grafove
+
+library("viridisLite")
+```
+
+\newpage
+
+# 1 Uvod
+
+Industrija videoigara danas ostvaruje veće prihode od filmske i glazbene industrije. Godišnje izlaze tisuće naslova, a samo mali dio njih ostvari veliku prodaju. Zato nas zanima što razlikuje uspješne igre od neuspješnih.
+
+Metacritic je stranica koja recenzije profesionalnih kritičara agregira u jednu ocjenu na skali 0-100, a uz to prikuplja i ocjene običnih igrača. Te ocjene mogu imati financijske posljedice: studio Obsidian Entertainment nije dobio ugovoreni bonus jer je igra Fallout: New Vegas dobila ocjenu 84, jedan bod ispod ugovorenog praga od 85.[^1]
+
+[^1]: <https://www.eurogamer.net/obsidian-fallout-new-vegas-deal-with-bethesda-meant-bonus-payment-only-with-85-metacritic>
+
+Metacritic ocjene utječu na kupovne odluke, stoga je prirodno pitati slaže li se publika s kritikom i prodaju li se bolje ocijenjene igre stvarno bolje.
+
+U ovom radu pokušat ćemo odgovoriti na sljedeća pitanja:
+
+- Kakve su ocjene i prodaja videoigara općenito?
+
+- Slažu li se kritičari i publika u ocjenama istih igara?
+
+- Razlikuju li se žanrovi po kvaliteti?
+
+- Prodaju li se bolje ocijenjene igre bolje?
+
+\newpage
+
+# 2 Opis varijabli
+
+```{r}
+#| include: false
+#| echo: false
+str(podaci)
+
+```
+
+Izvor naše baze podataka: stranica Kaggle, "Video Game Sales With Ratings", koja kombinira podatke s izvora vgchartz i Metacritic, a uključene su samo igre s mjerljivom prodajom (najmanje 10.000 primjeraka).
+
+```{r}
+#| include: false
+#| echo: false
+
+length(podaci$Name)
+```
+
+Analizu provodimo na skupu od 16.719 igara iz baze, koja odražava stanje na dan 22. prosinca 2016. godine. Izvorna baza sadrži 16 varijabli, no za analizu koristimo sljedeće:
+
+- **Name** - kvalitativna nominalna varijabla - ime videoigre
+
+- **Genre** - kvalitativna nominalna varijabla - žanr videoigre
+
+- **Global_Sales** - numerička neprekidna varijabla - broj prodanih kopija na globalnom tržištu (u milijunima)
+
+- **Log_Sales** - numerička neprekidna varijabla (izvedena) - log10 varijable **Global_Sales**
+
+- **Critic_Score** - numerička neprekidna varijabla - ocjena kritičara na skali od 0-100 prema Metacritic konvenciji
+
+- **User_Score** - numerička neprekidna varijabla - ocjena običnih igrača na skali 0-10
+
+- **User_Score100** - numerička neprekidna varijabla (izvedena) - ocjena običnih igrača na skali 0-100
+
+- **Hit** - kvalitativna nominalna (binarna) varijabla (izvedena) - označava je li igra prodana u više od milijun primjeraka (TRUE/FALSE)
+
+\newpage
+
+## 2.1 Napomene
+
+U analizi se koristimo prvenstveno žanrom, globalnom prodajom te ocjenama kritike i korisnika.
+
+Polaznu bazu podataka izmijenili smo i prilagodili analizi:
+
+- u varijabli **User_Score** neki su podaci bili obilježeni s "tbd" (to be determined), stoga smo te vrijednosti pretvorili u NA vrijednosti. Tada smo stvorili novu varijablu, **User_Score100** koja se nalazi na skali 0-100 tako što smo pomnožili prethodnu varijablu (**User_Score**\*10)
+
+- varijabla **Log_Sales** nastala je budući da je distribucija prodaje asimetrična s desnim repom (nekoliko megahitova, većina igara s malom prodajom)\
+  logaritamska transformacija čini je simetričnijom i time prikladnijom za korelaciju i linearnu regresiju
+
+- ocjene tretiramo kao neprekidne numeričke varijable zbog velikog raspona vrijednosti
+
+- Za analize koje uključuju ocjene koristi se podskup igara koje imaju i ocjenu kritike i ocjenu korisnika, a takvih je u skupu 7.017
+
+- Za dvije igre žanr nije naveden u bazi pa su te vrijednosti tretirane kao nedostajuće
+
+```{r}
+#| include: false
+#| echo: false
+
+sum(!is.na(podaci$Critic_Score) & !is.na(podaci$User_Score))
+```
+
+\newpage
+
+# 3 Analiza podataka
+
+## 3.1 Distribucija prodaje
+
+```{r}
+#| label: fig-prodaja
+#| fig-cap: "Distribucija globalne prodaje (lijevo) i log-transformirane prodaje (desno)"
+
+par(mfrow = c(1,2))
+
+
+hist(podaci$Global_Sales, xlab = "globalna prodaja (mil. primjeraka)",ylab="Broj igara", main="", col=viridis(1, begin=0.5))
+hist(podaci$Log_Sales, xlab = "log10 (globalna prodaja)", ylab="Broj igara", main ="", col = viridis(1, begin=0.5))
+```
+
+Vidljivo je da je distribucija asimetrična s desnim repom, odnosno velika se većina igara proda u manje od milijun primjeraka, a nekoliko megahitova rasteže rep do \~82.5 milijuna.
+
+Zbog toga izvodimo novu varijablu koja logaritamski transformira globalne prodaje, a na grafu se može uočiti da je distribucija približno simetrična.
+
+U analizama povezanosti prodaje s ocjenama koristit ćemo Log_Sales.
+
+```{r}
+#| label: tbl-prodaja
+#| tbl-cap: "Osnovne statistike globalne prodaje"
+
+#fivenum(podaci$Global_Sales)
+
+GS <- podaci$Global_Sales
+
+stat_prodaja <- data.frame(
+  Minimum = min(GS),
+  Medijan = median(GS),
+  Prosjek = round(mean(GS), 2),
+  Maksimum = max(GS)
+  
+)
+
+#stat_prodaja
+knitr::kable(stat_prodaja) #uredniji prikaz za pdf
+```
+
+Tipična igra u skupu prodaje se u oko 0.17 milijuna primjeraka, dok je prosjek znatno veći i iznosi 0.53 milijuna. Ta razlika posljedica je asimetrične distribucije. Nekoliko igara s vrlo velikom prodajom povlači prosjek prema gore pa medijan bolje opisuje tipičnu igru u skupu. Raspon je golem, od minimalnih 0.01 do 82.53 milijuna, koliko je prodala najprodavanija igra u skupu, Wii Sports.
+
+```{r}
+#| echo: false
+#| include: false
+(bestseller <- podaci$Name[GS==max(GS)])
+```
+
+## 3.2 Žanrovi i ocjene
+
+```{r}
+#| label: fig-zanrovi
+#| fig-cap: "Broj igara po žanru"
+
+par(mar = c(7, 4, 1, 1))
+
+freq <- sort(table(podaci$Genre), dec=T)
+
+boje_zanr <- setNames(viridis(length(freq)), names(freq))
+
+barplot(freq, col=viridis(12), ylab="Broj igara", las=2)
+
+
+```
+
+```{r}
+#| include: false
+#| echo: false
+
+sort(table(podaci$Genre), dec=T)[1:3]
+sort(table(podaci$Genre), dec=F)[1]
+
+
+```
+
+Najzastupljeniji žanr u skupu je Action s 3370 igara, slijede Sports i Misc, dok je najmanje zastupljen Puzzle.
+
+Zanima nas i razlikuju li se žanrovi po kvaliteti pa promatramo distribucije ocjena kritike po žanrovima.
+
+```{r}
+#| label: fig-ocjene
+#| fig-cap: "Ocjena kritike po žanru"
+#| echo: false
+
+par(mar = c(7, 4, 1, 1))
+Genre_sort <- reorder(podaci_oc$Genre, podaci_oc$Critic_Score, FUN = median)
+boxplot(podaci_oc$Critic_Score ~ Genre_sort, las=2, xlab="", ylab="Ocjena kritike (0-100)", col=boje_zanr[levels(Genre_sort)])
+```
+
+Najviši medijan ocjene kritike ima žanr Sports, a najniži Adventure. Uočimo da najveće raspršenje ocjena kritike imaju žanrovi Misc, Racing te Action, u kojem su izvrsne i vrlo loše ocijenjene igre - dok su Simulation i Strategy najujednačeniji.
+
+Jesu li uočene razlike između žanrova statistički značajne, provjeravamo u nastavku.
+
+```{r}
+#| echo: false
+#| include: false
+#| #include: true <- za prikaz medijana/IQR, ne zeli prikazati data.frame inace
+
+data.frame(median = sort(tapply(podaci_oc$Critic_Score, podaci_oc$Genre, median), dec=T)) #medijani
+
+data.frame(IQR = sort(tapply(podaci_oc$Critic_Score, podaci_oc$Genre, IQR))) #mjere rasprsenosti
+
+```
+
+\newpage
+
+## 3.3 Jesu li akcijske igre u prosjeku "generalno pozitivne"?
+
+Koristit ćemo t-test na jednom uzorku jer uspoređujemo očekivanje jedne populacije (akcijske igre) s referentnom vrijednošću.\
+Metacritic prag 75 ("generally favorable") stvarna je referentna vrijednost, stoga usporedba s njom ima smisla. Uzorak je velik pa je test opravdan prema centralnom graničnom teoremu (CGT).
+
+```{r}
+#| echo: false
+#| label: fig-hist
+#| fig-cap: "Distribucija ocjene kritike akcijskih igara"
+
+
+action <- podaci_oc[podaci_oc$Genre=="Action",]
+hist(action$Critic_Score, breaks=30, col=viridis(1, begin=0.5), main="", xlab = "Ocjena kritike (0-100)", ylab="Broj igara")
+abline(v=75, lty=2, lwd=2)
+abline(v = mean(action$Critic_Score), lwd=2)
+
+legend("topright", legend = c("prag 75", "prosjek uzorka"), lty=c(2,1), bg="white")
+```
+
+Označimo s $\mu$ očekivanu ocjenu kritike akcijskih igara.
+
+Hipoteze:
+
+- $H_0: \mu = 75$
+- $H_1: \mu < 75$
+
+```{r}
+#| include: false
+#| echo: false
+
+t.test(action$Critic_Score, mu=75, alternative = "less")
+```
+
+Dobivena p-vrijednost \< 2.2e-16 =\> p-vrijednost \< 0.05; na razini značajnosti 0.05 odbacujemo $H_0$, tj. možemo tvrditi da je očekivana ocjena kritike akcijskih igara manja od 75. Prosječna ocjena u uzorku iznosi \~68, oko 7 bodova ispod praga.
+
+\newpage
+
+## 3.4 Razlikuju li se žanrovi Action i Sports?
+
+```{r}
+#| echo: false
+#| label: fig-dva-zanra
+#| fig-cap: "Ocjena kritike za žanrove Action i Sports"
+
+ocjene_action <- podaci_oc$Critic_Score[podaci_oc$Genre=="Action"]
+ocjene_sports <- podaci_oc$Critic_Score[podaci_oc$Genre=="Sports"]
+
+boxplot(ocjene_action, ocjene_sports, names=c("Action", "Sports"), col = viridis(2), xlab="", las=2, ylab="Ocjena kritike (0-100)")
+```
+
+Označimo:
+
+- $\mu_1$ - očekivana ocjena kritike žanra Action
+
+- $\mu_2$ - očekivana ocjena kritike žanra Sports
+
+Hipoteze:
+
+- $H_0: \mu_1 = \mu_2$
+- $H_1: \mu_1 \ne \mu_2$
+
+U svakoj su grupi različite igre, nema uparivanja i stoga ih smatramo nezavisnim uzorcima. Za provjeru hipoteze koristit ćemo Welchov test jer ne pretpostavlja jednake varijance grupa - klasični Studentov t bi tražio provjeru jednakosti varijanci kao dodatnu pretpostavku.
+
+```{r}
+#| include: false
+#| echo: false
+
+t.test(ocjene_action, ocjene_sports)
+
+```
+
+Dobivena p-vrijednost \< 2.2e-16 =\> p-vrijednost \< 0.05; na razini značajnosti 0.05 odbacujemo $H_0$, tj. možemo tvrditi da se očekivane ocjene kritike žanrova Action i Sports razlikuju, pri čemu sportske igre imaju višu prosječnu ocjenu (\~74 naspram \~68).
+
+\newpage
+
+## 3.5 Slažu li se kritičari i publika?
+
+Ovdje se radi o uparenim uzorcima jer uspoređujemo dvije ocjene iste igre. Usporedbu omogućuje varijabla User_Score100, kojom su obje ocjene na istoj skali.
+
+Označimo s $\mu_p$ očekivanu razliku ocjene kritike i ocjene korisnika za istu igru.
+
+Hipoteze:
+
+- $H_0: \mu_p = 0$
+
+- $H_1: \mu_p \ne 0$
+
+```{r}
+#| echo: false
+#| include: false
+
+t.test(podaci_oc$Critic_Score, podaci_oc$User_Score100, paired=T)
+
+```
+
+Dobivena p-vrijednost \< 2.2e-16 =\> p-vrijednost \< 0.05; na razini značajnosti 0.05 odbacujemo $H_0$ i prihvaćamo $H_1$, tj. možemo tvrditi da je očekivana razlika ocjene kritike i korisnika za istu igru različita od 0.
+
+Prosječna razlika iznosi \~ -1.57, što znači da kritičari istim igrama daju niže ocjene - dakle publika i kritika se sustavno razilaze u tom smjeru.
+
+```{r}
+#| label: fig-upareni
+#| fig-cap: "Distribucija razlike ocjena (kritika - korisnici)"
+#| echo: false
+
+razlika <- podaci_oc$Critic_Score - podaci_oc$User_Score100
+hist(razlika, breaks=40, col=viridis(1, begin=0.5), main="", xlab="Ocjena kritike - ocjene korisnika", ylab="Broj igara")
+abline(v = 0, lty=2, lwd = 3)
+abline(v = mean(razlika), lwd=2)
+legend("topright", legend = c("razlika = 0", "prosjek"), lty=c(2,1), bg="white")
+
+#pozitivan prosjek -> kritika blaža
+#negativan prosjek -> kritika stroža
+```
+
+Distribucija razlike pomaknuta je ulijevo od nule, što potvrđuje da kritika u prosjeku strože ocjenjuje.
+
+```{r}
+#| include: false
+#| echo: false
+
+max(abs(razlika))
+range(razlika)
+```
+
+Prosječna razlika od 1.57 bodova statistički je značajna. Uz ovako velik uzorak (n = 7.017) i male razlike postaju značajne. Raspršenje je pritom veliko: za pojedine igre ocjene kritike i publike razilaze se i za više od 60 bodova.\
+
+## 3.6 Prodaju li se bolje ocijenjene igre bolje?
+
+### 3.6.1 Udio hitova prema ocjeni kritike
+
+Za razliku od dosadašnjih usporedbi očekivanja, ovdje uspoređujemo udjele - 'Hit' je binarna varijabla (TRUE/FALSE) pa nema smisla računati prosjek ocjena, nego proporciju hitova u svakoj skupini. Skupine (igre s ocjenom $\geq 75$ i ostale) čine dva nezavisna uzorka, a oba su dovoljno velika za korištenje testa o usporedbi proporcija.
+
+Igru smatramo hitom ako je prodana u više od milijun primjeraka; visoko ocijenjenima smatramo igre s ocjenom kritike od najmanje 75.
+
+Označimo:
+
+- $\theta_1$ - proporcija hitova među visoko ocijenjenim igrama (ocjena $\geq$ 75)
+
+- $\theta_2$ - proporcija hitova među ostalim igrama
+
+Hipoteze:
+
+- $H_0: \theta_1 = \theta_2$
+- $H_1: \theta_1 > \theta_2$
+
+```{r}
+#| include: false
+#| echo: false
+#| label: test-proporcije
+
+uvjet <- podaci_oc$Critic_Score >= 75
+
+Hit_visoka <- sum(podaci_oc$Hit[uvjet]) #hitovi među ocjenom >= 75
+n_visoka <- sum(uvjet)
+Hit_niska <- sum(podaci_oc$Hit[!uvjet])
+n_niska <- sum(!uvjet)
+
+prop.test(c(Hit_visoka, Hit_niska), c(n_visoka, n_niska), alternative = "greater")
+
+
+```
+
+P-vrijednost \< 2.2e-16 =\> p-vrijednost \< 0.05, na razini značajnosti od 0.05 odbacujemo $H_0$ tj. možemo tvrditi da je proporcija hitova veća među visoko ocijenjenim igrama.
+
+```{r}
+#| include: false
+#| echo: false
+
+Hit_visoka / n_visoka
+Hit_niska / n_niska
+
+```
+
+Među visoko ocijenjenim igrama hit je otprilike svaka treća (32%), dok je među ostalima hitova tek 9%.
+
+\newpage
+
+### 3.6.2 Povezanost ocjena i prodaje
+
+Koristimo Log_Sales umjesto Global_Sales. Test o koeficijentu korelacije pretpostavlja dvodimenzionalnu normalnu distribuciju, a bez te pretpostavke može se koristiti na velikom uzorku ako distribucije nisu jako asimetrične. Izvorna prodaja jako je asimetrična s desnim repom (dominiraju megahitovi) pa koristimo logaritamski transformiranu prodaju, čija je distribucija približno simetrična.
+
+Promatramo korelaciju ocjene kritike i log-prodaje.
+
+Hipoteze (gdje je $\rho$ koeficijent korelacije ocjene kritike i log-prodaje):
+
+- $H_0$ : $\rho = 0$
+
+- $H_1$ : $\rho$ $\ne 0$
+
+```{r}
+#| include: false
+#| echo: false
+
+cor(podaci_oc$Critic_Score, podaci_oc$Log_Sales)
+cor.test(podaci_oc$Critic_Score, podaci_oc$Log_Sales) 
+
+
+cor(podaci_oc$Critic_Score, podaci_oc$User_Score100) #kritika - publika
+
+```
+
+Dobivena p-vrijednost \< 2.2e-16 =\> p-vrijednost \< 0.05 pa na razini značajnosti od 0.05 odbacujemo $H_0$ i prihvaćamo $H_1$, odnosno možemo tvrditi da je korelacija između ocjene kritike i log-prodaje statistički značajno različita od nule.
+
+Pearsonov koeficijent korelacije, kao procjena za $\rho$, iznosi r = 0.36 - procijenjena povezanost je pozitivna, ali slaba do umjerena.
+
+```{r}
+#| label: fig-korelacija
+#| fig-cap: "Odnos ocjene kritike i log-prodaje"
+
+plot(podaci_oc$Critic_Score, podaci_oc$Log_Sales,
+     pch = 16, col = rgb(0,0,0,0.15),
+     xlab="Ocjena kritike (0-100)", ylab="log10(globalna prodaja)")
+
+abline(lm(podaci_oc$Log_Sales ~ podaci_oc$Critic_Score), col="red", lwd=2)
+
+```
+
+### 3.6.3 Regresijski model prodaje
+
+```{r}
+#| echo: false
+#| include: false
+
+model <- lm(Log_Sales ~ Critic_Score, data=podaci_oc)
+summary(model)
+```
+
+Procijenjeni model glasi: Log_Sales = $b_0 + b_1 \cdot$Critic_Score.
+
+**Analiza adekvatnosti modela**: koeficijent uz ocjenu kritike statistički je značajan (p-vrijednost \< 2.2e-16) i iznosi $b_1 \approx 0.016$. Budući da je zavisna varijabla log10 prodaje, koeficijent tumačimo na sljedeći način:
+
+porast ocjene za 10 bodova množi očekivanu prodaju s $10^{10 \cdot b_1} \approx 1.44$ - igra s 10 bodova višom ocjenom u prosjeku ostvaruje oko 1.44x (44%) veću prodaju.
+
+**Analiza jakosti modela**: $R^2 = 0.13$ pokazuje da model objašnjava samo oko 13% varijabilnosti log-prodaje. Ocjena kritike je dakle slab prediktor prodaje; kvaliteta igre povezana je s komercijalnim uspjehom, no sama ga po sebi ne jamči.
+
+Primijetimo da je $R^2 = 0.13$ upravo kvadrat koeficijenta korelacije iz prethodnog odjeljka ($0.36^2 \approx 0.13$), budući da oba opisuju istu linearnu vezu.
+
+```{r}
+#| echo: false
+#| include: false
+
+coef(model)[2] #b1 
+10^(10*coef(model)[2])
+#igra s 10 bodova visom ocjenom u prosjeku ima oko 1.44puta (44%) vecu prodaju
+
+```
+
+```{r}
+#| echo: false
+#| fig-cap: "Analiza reziduala: reziduali u ovisnosti o procijenjenim vrijednostima (lijevo) i QQ-plot reziduala (desno)"
+#| label: fig-analiza-reziduala
+
+par(mfrow=c(1,2))
+plot(fitted(model), residuals(model),
+     xlab="Procijenjene vrijednosti", ylab="Reziduali")
+qqnorm(residuals(model), main="", xlab="Teorijski kvantili", ylab="Kvantili uzorka")
+qqline(residuals(model))
+```
+
+Na grafu reziduala u ovisnosti o procijenjenim vrijednostima ne uočava se sustavno povećanje ni smanjenje raspršenja pa nema razloga sumnjati u homogenost varijanci grešaka. QQ-plot pokazuje da reziduali u središnjem dijelu dobro prate normalnu distribuciju, uz blaga odstupanja u repovima, što uz ovako velik uzorak ne ugrožava zaključke.
+
+Nezavisnost grešaka ne provjeravamo grafovima uzastopnih reziduala jer opažanja nisu vremenski niz, nego međusobno različite igre. Formalni Shapiro-Wilkov test normalnosti nije primjenjiv jer je u R-u ograničen na uzorke do 5000 opažanja.
+
+\newpage
+
+# 4 Zaključak
+
+U ovom radu analizirali smo ocjene i prodaju videoigara u skupu od 16.719 naslova, s ciljem odgovora na pitanja postavljena u uvodu. Distribucija prodaje pokazala se vrlo asimetričnom s desnim repom; tipična igra prodaje se u oko 0.17 milijuna primjeraka, dok rijetki megahitovi poput najprodavanije igre Wii Sports (\~82.5 mil.) rastežu raspon.
+
+Prosječna razlika ocjena statistički je značajna, ali praktično mala: kritika za istu igru u prosjeku daje ocjenu nižu za oko 1.57 bodova. Međutim, raspršenje je veliko i za pojedine igre ocjene se razilaze i do 66 bodova pa prosječno slaganje skriva znatna pojedinačna neslaganja. Žanrovi se pritom značajno razlikuju po kvaliteti: primjerice, sportske igre u prosjeku su ocijenjene oko 6 bodova bolje od akcijskih, koje kao najzastupljeniji žanr ostaju značajno ispod praga "generalno pozitivne" ocjene.
+
+Bolje ocijenjene igre doista se i bolje prodaju: udio hitova među visoko ocijenjenim igrama iznosi \~32% naspram \~9% među ostalima, a korelacija ocjene kritike i log-prodaje je pozitivna (r = 0.36). Regresijski model pokazuje da ocjena kritike objašnjava oko 13% varijabilnosti log-prodaje pa je sama po sebi slab prediktor prodaje.
+
+Za kraj navodimo ograničenja analize. Baza odražava stanje na dan 22. prosinca 2016. godine i uključuje samo igre s mjerljivom prodajom (najmanje 10.000 primjeraka). Analize ocjena provedene su na podskupu od 7.017 igara koje imaju obje ocjene, a to su pretežno veći i noviji naslovi pa zaključci ne vrijede nužno za sve igre. Utvrđene povezanosti opisuju korelaciju, a ne uzročnost.
+
+\newpage
+
+# 5 Literatura
+
+- <https://quarto.org/docs/authoring/markdown-basics.html>
+
+- <https://dplyr.tidyverse.org/reference/na_if.html>
+
+- <https://www.kaggle.com/datasets/rush4ratio/video-game-sales-with-ratings?resource=download>
+
+- <https://www.eurogamer.net/obsidian-fallout-new-vegas-deal-with-bethesda-meant-bonus-payment-only-with-85-metacritic>
+
+- <https://cran.r-project.org/web/packages/viridisLite/index.html>
